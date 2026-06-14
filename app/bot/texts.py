@@ -19,7 +19,7 @@ BACK = "⬅️ Назад"
 
 def fmt_deadline(deadline: datetime | None) -> str:
     if deadline is None:
-        return "без дедлайна"
+        return "Не скоро"
     return f"до {deadline:%d.%m.%Y}"
 
 
