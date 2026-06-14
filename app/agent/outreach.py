@@ -71,6 +71,42 @@ async def send_initial(session: AsyncSession, opp: Opportunity) -> str:
     return f"✉️ Отправлено первое письмо: «{opp.title}» → {opp.contact_email}"
 
 
+async def send_recontact(session: AsyncSession, thread: EmailThread) -> str:
+    """Повторное письмо «отложенному» контакту в назначенную дату.
+
+    Начинает новый раунд ожидания ответа: возвращает возможность в CONTACTED,
+    чтобы дальше работала обычная цепочка follow-up.
+    """
+    opp = thread.opportunity
+    subject = f"Re: Сотрудничество: {opp.title}"
+    body = (
+        "Здравствуйте!\n\n"
+        "Ранее вы предложили вернуться к вопросу позже — уточняем актуальные "
+        "сроки и условия участия. Подскажите, пожалуйста, открыт ли набор и "
+        "какие даты сейчас актуальны." + SIGNATURE
+    )
+    message_id = await send_email(opp.contact_email, subject, body)
+    now = datetime.utcnow()
+
+    thread.subject = subject
+    thread.status = ThreadStatus.WAITING
+    thread.last_sent_at = now
+    thread.followups_sent = 0
+    thread.next_action_at = now + timedelta(days=settings.followup_delay_days)
+
+    session.add(
+        EmailMessage(
+            thread_id=thread.id,
+            direction=MessageDirection.OUT,
+            subject=subject,
+            body=body,
+            message_id=message_id,
+        )
+    )
+    opp.stage = OutreachStage.CONTACTED
+    return f"📅 Повторное письмо (по договорённости): «{opp.title}» → {opp.contact_email}"
+
+
 async def send_followup(session: AsyncSession, thread: EmailThread) -> str:
     """Follow-up по треду, где не дождались ответа."""
     opp = thread.opportunity

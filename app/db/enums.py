@@ -31,6 +31,7 @@ class OutreachStage(str, enum.Enum):
     FOLLOW_UP_2 = "follow_up_2"  # отправлен 2-й follow-up
     REPLIED = "replied"          # пришёл ответ, ещё не разобран
     NEEDS_INFO = "needs_info"    # ответ есть, но нужна доп. информация
+    DEFERRED = "deferred"        # «не скоро»: даты пока нет, написать позже
     CONFIRMED = "confirmed"      # условия/дедлайн подтверждены → публикуем
     REJECTED = "rejected"        # отказ
     STALLED = "stalled"          # нет ответа после всех follow-up

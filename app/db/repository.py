@@ -101,10 +101,39 @@ async def opportunities_to_contact(session: AsyncSession) -> list[Opportunity]:
 async def threads_needing_followup(
     session: AsyncSession, now: datetime
 ) -> list[EmailThread]:
-    """Треды, где пора слать follow-up (срок истёк, лимит не достигнут)."""
-    stmt = select(EmailThread).where(
-        EmailThread.next_action_at.is_not(None),
-        EmailThread.next_action_at <= now,
-        EmailThread.followups_sent < settings.max_followups,
+    """Треды, где пора слать follow-up (ждём первый ответ, лимит не достигнут).
+
+    «Отложенные» (stage=DEFERRED) сюда не попадают — их ведёт отдельная задача.
+    """
+    chasing = {
+        OutreachStage.CONTACTED,
+        OutreachStage.FOLLOW_UP_1,
+        OutreachStage.FOLLOW_UP_2,
+    }
+    stmt = (
+        select(EmailThread)
+        .join(Opportunity, EmailThread.opportunity_id == Opportunity.id)
+        .where(
+            EmailThread.next_action_at.is_not(None),
+            EmailThread.next_action_at <= now,
+            EmailThread.followups_sent < settings.max_followups,
+            Opportunity.stage.in_(chasing),
+        )
+    )
+    return list((await session.scalars(stmt)).all())
+
+
+async def threads_deferred_due(
+    session: AsyncSession, now: datetime
+) -> list[EmailThread]:
+    """«Отложенные» треды (stage=DEFERRED), у которых настала дата повторного письма."""
+    stmt = (
+        select(EmailThread)
+        .join(Opportunity, EmailThread.opportunity_id == Opportunity.id)
+        .where(
+            EmailThread.next_action_at.is_not(None),
+            EmailThread.next_action_at <= now,
+            Opportunity.stage == OutreachStage.DEFERRED,
+        )
     )
     return list((await session.scalars(stmt)).all())

@@ -14,8 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.agent import outreach
-from app.agent.analyzer import analyze_email
-from app.agent.email_client import fetch_unseen
+from app.agent.analyzer import analyze_email, compose_reply
+from app.agent.email_client import fetch_unseen, send_email
 from app.agent.pipeline import apply_analysis
 from app.bot import texts
 from app.db.base import async_session
@@ -24,11 +24,23 @@ from app.db.models import EmailMessage, EmailThread, Opportunity
 from app.db.repository import (
     due_reminders,
     opportunities_to_contact,
+    threads_deferred_due,
     threads_needing_followup,
 )
 from config import settings
 
 log = logging.getLogger("scheduler")
+
+# Признаки автоответа — на такие письма агент не отвечает (защита от циклов).
+_AUTOREPLY_MARKERS = (
+    "auto-reply", "autoreply", "out of office", "автоответ", "no-reply",
+    "noreply", "do not reply", "не отвечайте",
+)
+
+
+def _looks_like_autoreply(subject: str) -> bool:
+    s = (subject or "").lower()
+    return any(m in s for m in _AUTOREPLY_MARKERS)
 
 
 async def _notify_admin(bot: Bot, text: str) -> None:
@@ -128,12 +140,54 @@ async def job_analyze(bot: Bot) -> None:
                 msg.is_analyzed = True
 
                 opp = await session.get(Opportunity, msg.thread.opportunity_id)
-                note = apply_analysis(opp, analysis)
+                note = apply_analysis(opp, analysis, msg.thread)
+
+                # Авто-ответ через DeepSeek (кроме отказов и явных автоответов).
+                if (
+                    analysis.intent != "negative"
+                    and opp.contact_email
+                    and not _looks_like_autoreply(msg.subject)
+                ):
+                    reply = await compose_reply(opp.title, msg.subject, msg.body)
+                    if reply:
+                        full = reply + outreach.SIGNATURE
+                        subj = (
+                            msg.subject
+                            if msg.subject.lower().startswith("re:")
+                            else f"Re: {msg.subject}"
+                        )
+                        mid = await send_email(opp.contact_email, subj, full)
+                        session.add(
+                            EmailMessage(
+                                thread_id=msg.thread.id,
+                                direction=MessageDirection.OUT,
+                                subject=subj,
+                                body=full,
+                                message_id=mid,
+                            )
+                        )
+                        note += " · ✉️ отправлен авто-ответ"
+
                 await session.commit()
                 await _notify_admin(bot, note)
             except Exception:
                 await session.rollback()
                 log.exception("analyze failed for msg=%s", msg.id)
+
+
+# ── 4б. Повторный контакт «отложенных» в назначенную дату ──
+async def job_deferred_recontact(bot: Bot) -> None:
+    async with async_session() as session:
+        threads = await threads_deferred_due(session, datetime.utcnow())
+        for thread in threads:
+            await session.refresh(thread, ["opportunity"])
+            try:
+                msg = await outreach.send_recontact(session, thread)
+                await session.commit()
+                await _notify_admin(bot, msg)
+            except Exception:
+                await session.rollback()
+                log.exception("recontact failed for thread=%s", thread.id)
 
 
 # ── 5. Напоминания пользователям ───────────────────────────
@@ -158,6 +212,7 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
     # интервалы можно вынести в конфиг; здесь разумные значения по умолчанию
     scheduler.add_job(job_send_initial, "interval", hours=12, args=[bot])
     scheduler.add_job(job_followups, "interval", hours=6, args=[bot])
+    scheduler.add_job(job_deferred_recontact, "interval", hours=12, args=[bot])
     scheduler.add_job(job_poll_inbox, "interval", minutes=10, args=[bot])
     scheduler.add_job(job_analyze, "interval", minutes=15, args=[bot])
     scheduler.add_job(job_reminders, "interval", minutes=30, args=[bot])
