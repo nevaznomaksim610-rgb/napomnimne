@@ -9,6 +9,7 @@ class Category(str, enum.Enum):
 
     ACCELERATOR = "accelerator"
     GRANT = "grant"
+    LEADERSHIP = "leadership"
     AMBASSADOR = "ambassador"
 
     @property
@@ -16,6 +17,7 @@ class Category(str, enum.Enum):
         return {
             Category.ACCELERATOR: "🚀 Акселераторы",
             Category.GRANT: "💰 Гранты",
+            Category.LEADERSHIP: "🎓 Лидерские программы",
             Category.AMBASSADOR: "🤝 Амбассадорства",
         }[self]
 

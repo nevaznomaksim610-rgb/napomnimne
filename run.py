@@ -5,7 +5,8 @@ import asyncio
 import logging
 
 from app.bot.main import build_bot, build_dispatcher
-from app.db.base import init_db
+from app.db.base import async_session, init_db
+from app.db.seeder import seed_catalog_if_empty
 from app.scheduler.jobs import build_scheduler
 
 logging.basicConfig(
@@ -16,6 +17,10 @@ logging.basicConfig(
 
 async def main() -> None:
     await init_db()
+    async with async_session() as session:
+        added = await seed_catalog_if_empty(session)
+    if added:
+        logging.getLogger("run").info("Каталог заполнен: %s программ.", added)
 
     bot = build_bot()
     dp = build_dispatcher()
