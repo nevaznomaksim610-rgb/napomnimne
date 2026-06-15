@@ -75,10 +75,16 @@ async def cmd_outreach(message: Message, command: CommandObject) -> None:
         try:
             note = await outreach.send_initial(session, opp)
             await session.commit()
-        except Exception:
+        except Exception as exc:
             await session.rollback()
             log.exception("admin /outreach send failed")
-            await message.answer("❌ Не удалось отправить письмо (см. логи).")
+            await message.answer(
+                "❌ Не удалось отправить письмо.\n\n"
+                f"SMTP: <code>{settings.smtp_host}:{settings.smtp_port}</code>\n"
+                f"Отправитель: <code>{settings.email_address or '(пусто)'}</code>\n"
+                f"Пароль задан: {'да' if settings.email_password else 'НЕТ'}\n\n"
+                f"Ошибка: <code>{exc}</code>"
+            )
             return
 
     await message.answer(
