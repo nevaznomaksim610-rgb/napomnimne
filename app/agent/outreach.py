@@ -16,27 +16,35 @@ from app.db.models import EmailMessage, EmailThread, Opportunity
 from app.db.enums import MessageDirection
 from config import settings
 
-# ── Шаблоны писем (TODO: заменить на реальные тексты заказчика) ──
-SIGNATURE = "\n\n—\nС уважением, команда проекта"
+# ── Шаблоны писем ──────────────────────────────────────────
+# Агент пишет от лица обычного студента, которому интересно, когда набор.
+# Коротко и по-человечески, без формальностей и продающих фраз.
+SIGNATURE = f"\n\n{settings.agent_name}"
+
+
+def _greeting(opp: Opportunity) -> str:
+    if opp.contact_name:
+        return f"Здравствуйте, {opp.contact_name}!"
+    return "Здравствуйте!"
 
 
 def _initial_template(opp: Opportunity) -> tuple[str, str]:
-    subject = f"Сотрудничество: {opp.title}"
+    subject = f"Набор в «{opp.title}»"
     body = (
-        f"Здравствуйте{', ' + opp.contact_name if opp.contact_name else ''}!\n\n"
-        "Пишем по поводу участия/подачи заявки. Подскажите, пожалуйста, "
-        "актуальные сроки и условия участия.\n\n"
-        "Будем благодарны за информацию." + SIGNATURE
+        f"{_greeting(opp)}\n\n"
+        f"Меня зовут {settings.agent_name}, я {settings.agent_affiliation}. "
+        f"Подскажите, пожалуйста, когда будет следующий набор в «{opp.title}»?"
     )
     return subject, body
 
 
 def _followup_template(opp: Opportunity, n: int) -> tuple[str, str]:
-    subject = f"Re: Сотрудничество: {opp.title}"
+    subject = f"Re: Набор в «{opp.title}»"
     body = (
-        "Здравствуйте!\n\n"
-        "Поднимаю предыдущее письмо — возможно, оно затерялось. "
-        "Подскажите, пожалуйста, актуальные сроки и условия." + SIGNATURE
+        f"{_greeting(opp)}\n\n"
+        "Извините за беспокойство — возможно, моё письмо затерялось. "
+        f"Подскажите, пожалуйста, когда планируется следующий набор "
+        f"в «{opp.title}»?" + SIGNATURE
     )
     return subject, body
 
@@ -78,12 +86,12 @@ async def send_recontact(session: AsyncSession, thread: EmailThread) -> str:
     чтобы дальше работала обычная цепочка follow-up.
     """
     opp = thread.opportunity
-    subject = f"Re: Сотрудничество: {opp.title}"
+    subject = f"Re: Набор в «{opp.title}»"
     body = (
-        "Здравствуйте!\n\n"
-        "Ранее вы предложили вернуться к вопросу позже — уточняем актуальные "
-        "сроки и условия участия. Подскажите, пожалуйста, открыт ли набор и "
-        "какие даты сейчас актуальны." + SIGNATURE
+        f"{_greeting(opp)}\n\n"
+        f"Я писал ранее про набор в «{opp.title}» — вы предложили уточнить "
+        "позже. Подскажите, пожалуйста, открыт ли сейчас набор и какие "
+        "ближайшие даты?" + SIGNATURE
     )
     message_id = await send_email(opp.contact_email, subject, body)
     now = datetime.utcnow()

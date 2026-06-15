@@ -40,5 +40,10 @@ class Settings(BaseSettings):
     timezone: str = "Europe/Moscow"
     reminder_hour: int = 9
 
+    # Персона агента: от чьего лица пишутся письма в программы. Это обычный
+    # студент, которому интересно, когда следующий набор. Меняется через .env.
+    agent_name: str = "Кирилл"
+    agent_affiliation: str = "студент ВШЭ"
+
 
 settings = Settings()
