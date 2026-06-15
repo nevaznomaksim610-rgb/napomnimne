@@ -17,7 +17,7 @@ from app.agent import outreach
 from app.agent.analyzer import analyze_email, compose_reply
 from app.agent.email_client import fetch_unseen, send_email
 from app.agent.pipeline import apply_analysis
-from app.bot import texts
+from app.bot import keyboards, texts
 from app.db.base import async_session
 from app.db.enums import MessageDirection, ThreadStatus
 from app.db.models import EmailMessage, EmailThread, Opportunity
@@ -198,7 +198,9 @@ async def job_reminders(bot: Bot) -> None:
             opp = await session.get(Opportunity, reminder.opportunity_id)
             try:
                 await bot.send_message(
-                    reminder.user_id, texts.reminder_fire(opp)
+                    reminder.user_id,
+                    texts.reminder_fire(opp),
+                    reply_markup=keyboards.reminder_fire_kb(opp),
                 )
                 reminder.is_sent = True
                 await session.commit()
@@ -215,5 +217,5 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(job_deferred_recontact, "interval", hours=12, args=[bot])
     scheduler.add_job(job_poll_inbox, "interval", minutes=10, args=[bot])
     scheduler.add_job(job_analyze, "interval", minutes=15, args=[bot])
-    scheduler.add_job(job_reminders, "interval", minutes=30, args=[bot])
+    scheduler.add_job(job_reminders, "interval", minutes=5, args=[bot])
     return scheduler

@@ -34,5 +34,11 @@ class Settings(BaseSettings):
     max_followups: int = 2
     reminder_offset_days: int = 7
 
+    # Часовой пояс пользователей: напоминания считаются и показываются в нём,
+    # в БД всё хранится в UTC. reminder_hour — час по умолчанию, в который
+    # приходят напоминания «за N дней до дедлайна» и без указанного времени.
+    timezone: str = "Europe/Moscow"
+    reminder_hour: int = 9
+
 
 settings = Settings()

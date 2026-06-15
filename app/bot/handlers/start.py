@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot import keyboards, texts
@@ -14,7 +15,8 @@ router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, state: FSMContext) -> None:
+    await state.clear()
     async with async_session() as session:
         await upsert_user(
             session,
@@ -27,7 +29,8 @@ async def cmd_start(message: Message) -> None:
 
 
 @router.callback_query(F.data == "home")
-async def go_home(callback: CallbackQuery) -> None:
+async def go_home(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
     await callback.message.edit_text(
         texts.CHOOSE_CATEGORY, reply_markup=keyboards.categories_kb()
     )

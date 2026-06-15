@@ -1,10 +1,11 @@
 """CRUD-функции поверх моделей. Каждая принимает открытую сессию."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from config import settings
 
@@ -50,19 +51,25 @@ async def get_opportunity(
 
 
 # ── Напоминания ─────────────────────────────────────────────
-async def create_reminder(
-    session: AsyncSession, user_id: int, opp: Opportunity
-) -> Reminder | None:
-    """Создать напоминание за N дней до дедлайна. None — если дедлайна нет."""
-    if opp.deadline is None:
-        return None
-    remind_at = opp.deadline - timedelta(days=settings.reminder_offset_days)
+# offset_days = -1 — пометка «время задано вручную» (интервал/точная дата),
+# а не «за N дней до дедлайна».
+CUSTOM_OFFSET = -1
 
-    # не дублируем
+
+async def add_reminder(
+    session: AsyncSession,
+    user_id: int,
+    opportunity_id: int,
+    remind_at: datetime,
+    offset_days: int = CUSTOM_OFFSET,
+) -> Reminder:
+    """Создать напоминание на конкретный момент (UTC). Дубли (тот же
+    пользователь+возможность+время, ещё не отправленные) не плодим."""
     existing = await session.scalar(
         select(Reminder).where(
             Reminder.user_id == user_id,
-            Reminder.opportunity_id == opp.id,
+            Reminder.opportunity_id == opportunity_id,
+            Reminder.remind_at == remind_at,
             Reminder.is_sent.is_(False),
         )
     )
@@ -71,13 +78,46 @@ async def create_reminder(
 
     reminder = Reminder(
         user_id=user_id,
-        opportunity_id=opp.id,
+        opportunity_id=opportunity_id,
         remind_at=remind_at,
-        offset_days=settings.reminder_offset_days,
+        offset_days=offset_days,
     )
     session.add(reminder)
     await session.flush()
     return reminder
+
+
+async def list_user_reminders(
+    session: AsyncSession, user_id: int
+) -> list[Reminder]:
+    """Активные (ещё не отправленные) напоминания пользователя с возможностями."""
+    stmt = (
+        select(Reminder)
+        .where(Reminder.user_id == user_id, Reminder.is_sent.is_(False))
+        .order_by(Reminder.remind_at.asc())
+        .options(selectinload(Reminder.opportunity))
+    )
+    return list((await session.scalars(stmt)).all())
+
+
+async def get_user_reminder(
+    session: AsyncSession, reminder_id: int, user_id: int
+) -> Reminder | None:
+    reminder = await session.get(Reminder, reminder_id)
+    if reminder is None or reminder.user_id != user_id:
+        return None
+    return reminder
+
+
+async def delete_reminder(
+    session: AsyncSession, reminder_id: int, user_id: int
+) -> bool:
+    """Удалить напоминание, если оно принадлежит пользователю."""
+    reminder = await get_user_reminder(session, reminder_id, user_id)
+    if reminder is None:
+        return False
+    await session.delete(reminder)
+    return True
 
 
 async def due_reminders(session: AsyncSession, now: datetime) -> list[Reminder]:

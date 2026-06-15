@@ -4,6 +4,7 @@ from __future__ import annotations
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import settings
 
@@ -18,7 +19,9 @@ def build_bot() -> Bot:
 
 
 def build_dispatcher() -> Dispatcher:
-    dp = Dispatcher()
+    # MemoryStorage хватает: FSM используется только для разового ввода даты,
+    # терять это состояние при рестарте не страшно (один реплика на Railway).
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(start.router)
     dp.include_router(catalog.router)
     dp.include_router(reminders.router)
