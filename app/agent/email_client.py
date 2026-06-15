@@ -29,11 +29,14 @@ class IncomingEmail:
 async def send_email(to_addr: str, subject: str, body: str) -> str | None:
     """Отправить письмо. Возвращает Message-ID/идентификатор отправки.
 
-    Если задан email_api_key — шлём через HTTP-API провайдера (Railway
+    Если у выбранного провайдера заданы ключи — шлём через HTTP-API (Railway
     блокирует SMTP). Иначе — обычный SMTP (локальная разработка).
     """
-    if settings.email_api_key:
-        return await _send_via_api(to_addr, subject, body)
+    provider = settings.email_api_provider
+    if provider == "sendpulse" and settings.sendpulse_api_id and settings.sendpulse_api_secret:
+        return await _send_via_sendpulse(to_addr, subject, body)
+    if provider == "brevo" and settings.email_api_key:
+        return await _send_via_brevo(to_addr, subject, body)
     return await _send_via_smtp(to_addr, subject, body)
 
 
@@ -56,12 +59,9 @@ async def _send_via_smtp(to_addr: str, subject: str, body: str) -> str | None:
     return msg["Message-ID"]
 
 
-async def _send_via_api(to_addr: str, subject: str, body: str) -> str | None:
+async def _send_via_brevo(to_addr: str, subject: str, body: str) -> str | None:
     """Отправка через Brevo HTTP-API. From и Reply-To = наш ящик, чтобы
     ответы приходили на mail.ru и читались по IMAP."""
-    if settings.email_api_provider != "brevo":
-        raise ValueError(f"Неизвестный email_api_provider: {settings.email_api_provider}")
-
     payload = {
         "sender": {"email": settings.email_address, "name": settings.agent_name},
         "to": [{"email": to_addr}],
@@ -81,6 +81,53 @@ async def _send_via_api(to_addr: str, subject: str, body: str) -> str | None:
             raise RuntimeError(f"Brevo {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
     return data.get("messageId")
+
+
+async def _send_via_sendpulse(to_addr: str, subject: str, body: str) -> str | None:
+    """Отправка через SendPulse HTTP-API (OAuth client_credentials).
+
+    From и Reply-To = наш ящик, чтобы ответы приходили на mail.ru и читались
+    по IMAP. SendPulse ждёт html в base64; text шлём как есть.
+    """
+    import base64
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        token_resp = await client.post(
+            "https://api.sendpulse.com/oauth/access_token",
+            json={
+                "grant_type": "client_credentials",
+                "client_id": settings.sendpulse_api_id,
+                "client_secret": settings.sendpulse_api_secret,
+            },
+        )
+        if token_resp.status_code >= 400:
+            raise RuntimeError(
+                f"SendPulse auth {token_resp.status_code}: {token_resp.text[:200]}"
+            )
+        token = token_resp.json().get("access_token")
+        if not token:
+            raise RuntimeError("SendPulse: не получен access_token")
+
+        html = body.replace("\n", "<br>")
+        payload = {
+            "email": {
+                "subject": subject,
+                "from": {"name": settings.agent_name, "email": settings.email_address},
+                "to": [{"email": to_addr}],
+                "reply_to": settings.email_address,
+                "text": body,
+                "html": base64.b64encode(html.encode("utf-8")).decode("ascii"),
+            }
+        }
+        resp = await client.post(
+            "https://api.sendpulse.com/smtp/emails",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"SendPulse send {resp.status_code}: {resp.text[:200]}")
+        data = resp.json()
+    return str(data.get("id") or data.get("result") or "sent")
 
 
 async def fetch_unseen() -> list[IncomingEmail]:

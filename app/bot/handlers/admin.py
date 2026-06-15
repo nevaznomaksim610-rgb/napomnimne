@@ -119,11 +119,13 @@ async def cmd_outreach(message: Message, command: CommandObject) -> None:
         except Exception as exc:
             await session.rollback()
             log.exception("admin /outreach send failed")
-            mode = (
-                f"HTTP-API ({settings.email_api_provider})"
-                if settings.email_api_key
-                else f"SMTP {settings.smtp_host}:{settings.smtp_port}"
-            )
+            p = settings.email_api_provider
+            if p == "sendpulse" and settings.sendpulse_api_id:
+                mode = "HTTP-API (sendpulse)"
+            elif p == "brevo" and settings.email_api_key:
+                mode = "HTTP-API (brevo)"
+            else:
+                mode = f"SMTP {settings.smtp_host}:{settings.smtp_port}"
             await message.answer(
                 "❌ Не удалось отправить письмо.\n\n"
                 f"Режим: <code>{mode}</code>\n"
