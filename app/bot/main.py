@@ -8,7 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import settings
 
-from .handlers import catalog, reminders, start
+from .handlers import admin, catalog, reminders, start
 
 
 def build_bot() -> Bot:
@@ -22,6 +22,7 @@ def build_dispatcher() -> Dispatcher:
     # MemoryStorage хватает: FSM используется только для разового ввода даты,
     # терять это состояние при рестарте не страшно (один реплика на Railway).
     dp = Dispatcher(storage=MemoryStorage())
+    dp.include_router(admin.router)
     dp.include_router(start.router)
     dp.include_router(catalog.router)
     dp.include_router(reminders.router)
