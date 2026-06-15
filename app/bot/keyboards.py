@@ -9,23 +9,11 @@ from app.bot.texts import BACK, fmt_deadline
 from app.db.enums import Category
 from app.db.models import Opportunity
 
-# Telegram всегда центрирует текст на инлайн-кнопках; настройки «по левому краю»
-# в Bot API нет. Чтобы левые края подписей всё же встали в одну линию, добиваем
-# короткие подписи неразрывными пробелами до ширины самой длинной — тогда при
-# центрировании короткие занимают всю ширину и текст начинается слева.
-NBSP = " "
-
-
-def _left_align(labels: list[str]) -> list[str]:
-    width = max(len(label) for label in labels)
-    return [label + NBSP * (width - len(label)) for label in labels]
-
 
 def categories_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    titles = _left_align([cat.title for cat in Category])
-    for cat, title in zip(Category, titles):
-        kb.button(text=title, callback_data=f"cat:{cat.value}")
+    for cat in Category:
+        kb.button(text=cat.title, callback_data=f"cat:{cat.value}")
     kb.adjust(1)
     return kb.as_markup()
 
