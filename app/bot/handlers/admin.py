@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiogram import Router
@@ -44,6 +45,46 @@ _USAGE = (
 
 def _is_admin(message: Message) -> bool:
     return bool(settings.admin_chat_id) and message.from_user.id == settings.admin_chat_id
+
+
+# Что проверяем на доступность с сервера (host, port).
+_NET_TARGETS = [
+    ("smtp.mail.ru", 465),
+    ("smtp.mail.ru", 587),
+    ("imap.mail.ru", 993),
+    ("smtp.gmail.com", 587),
+    ("imap.gmail.com", 993),
+]
+
+
+async def _probe(host: str, port: int, timeout: float = 8.0) -> tuple[bool, str]:
+    try:
+        fut = asyncio.open_connection(host, port)
+        _, writer = await asyncio.wait_for(fut, timeout=timeout)
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        return True, ""
+    except asyncio.TimeoutError:
+        return False, "таймаут"
+    except Exception as exc:
+        return False, str(exc)[:60]
+
+
+@router.message(Command("nettest"))
+async def cmd_nettest(message: Message) -> None:
+    """Проверка доступности почтовых серверов с хостинга (только админ)."""
+    if not _is_admin(message):
+        return
+    await message.answer("⏳ Проверяю подключения с сервера…")
+    lines = []
+    for host, port in _NET_TARGETS:
+        ok, err = await _probe(host, port)
+        mark = "✅" if ok else "❌"
+        lines.append(f"{mark} <code>{host}:{port}</code>" + (f" — {err}" if err else ""))
+    await message.answer("Доступность с сервера:\n\n" + "\n".join(lines))
 
 
 @router.message(Command("outreach"))
