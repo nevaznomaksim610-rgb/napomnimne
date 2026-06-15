@@ -47,5 +47,13 @@ class Settings(BaseSettings):
     agent_name: str = "Кирилл"
     agent_affiliation: str = "студент ВШЭ"
 
+    # Отправка писем через HTTP-API (Railway блокирует исходящий SMTP).
+    # Если задан email_api_key — отправляем через провайдера по HTTPS, иначе
+    # падаем на обычный SMTP (для локальной разработки, где SMTP открыт).
+    # Приём ответов всегда по IMAP (на Railway он работает).
+    email_api_provider: str = "brevo"   # поддерживается: brevo
+    email_api_key: str = ""
+    email_api_url: str = "https://api.brevo.com/v3/smtp/email"
+
 
 settings = Settings()

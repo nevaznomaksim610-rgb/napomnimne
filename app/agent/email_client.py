@@ -13,6 +13,7 @@ from email.header import decode_header
 from email.message import EmailMessage as PyEmailMessage
 
 import aiosmtplib
+import httpx
 
 from config import settings
 
@@ -26,7 +27,17 @@ class IncomingEmail:
 
 
 async def send_email(to_addr: str, subject: str, body: str) -> str | None:
-    """Отправить письмо. Возвращает Message-ID или None при ошибке."""
+    """Отправить письмо. Возвращает Message-ID/идентификатор отправки.
+
+    Если задан email_api_key — шлём через HTTP-API провайдера (Railway
+    блокирует SMTP). Иначе — обычный SMTP (локальная разработка).
+    """
+    if settings.email_api_key:
+        return await _send_via_api(to_addr, subject, body)
+    return await _send_via_smtp(to_addr, subject, body)
+
+
+async def _send_via_smtp(to_addr: str, subject: str, body: str) -> str | None:
     msg = PyEmailMessage()
     msg["From"] = settings.email_address
     msg["To"] = to_addr
@@ -43,6 +54,33 @@ async def send_email(to_addr: str, subject: str, body: str) -> str | None:
         start_tls=settings.smtp_port == 587,
     )
     return msg["Message-ID"]
+
+
+async def _send_via_api(to_addr: str, subject: str, body: str) -> str | None:
+    """Отправка через Brevo HTTP-API. From и Reply-To = наш ящик, чтобы
+    ответы приходили на mail.ru и читались по IMAP."""
+    if settings.email_api_provider != "brevo":
+        raise ValueError(f"Неизвестный email_api_provider: {settings.email_api_provider}")
+
+    payload = {
+        "sender": {"email": settings.email_address, "name": settings.agent_name},
+        "to": [{"email": to_addr}],
+        "replyTo": {"email": settings.email_address},
+        "subject": subject,
+        "textContent": body,
+    }
+    headers = {
+        "api-key": settings.email_api_key,
+        "content-type": "application/json",
+        "accept": "application/json",
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(settings.email_api_url, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            # Brevo кладёт причину в тело — показываем её, а не голый код.
+            raise RuntimeError(f"Brevo {resp.status_code}: {resp.text[:200]}")
+        data = resp.json()
+    return data.get("messageId")
 
 
 async def fetch_unseen() -> list[IncomingEmail]:
