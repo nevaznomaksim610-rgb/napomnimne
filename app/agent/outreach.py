@@ -33,7 +33,9 @@ def _initial_template(opp: Opportunity) -> tuple[str, str]:
     body = (
         f"{_greeting(opp)}\n\n"
         f"Меня зовут {settings.agent_name}, я {settings.agent_affiliation}. "
-        f"Подскажите, пожалуйста, когда будет следующий набор в «{opp.title}»?"
+        f"Подскажите, пожалуйста, когда будет следующий набор в «{opp.title}»? "
+        "А если точные даты пока неизвестны — ближе к какому времени лучше "
+        "написать, чтобы узнать точную информацию?"
     )
     return subject, body
 
@@ -42,9 +44,10 @@ def _followup_template(opp: Opportunity, n: int) -> tuple[str, str]:
     subject = f"Re: Набор в «{opp.title}»"
     body = (
         f"{_greeting(opp)}\n\n"
-        "Извините за беспокойство — возможно, моё письмо затерялось. "
-        f"Подскажите, пожалуйста, когда планируется следующий набор "
-        f"в «{opp.title}»?" + SIGNATURE
+        f"Это снова {settings.agent_name}. Подскажите, пожалуйста, появилась ли "
+        f"информация о датах следующего набора в «{opp.title}»? Если пока нет — когда "
+        "ориентировочно станет известно больше и когда лучше написать за "
+        "точными сроками?" + SIGNATURE
     )
     return subject, body
 
@@ -60,7 +63,7 @@ async def send_initial(session: AsyncSession, opp: Opportunity) -> str:
         subject=subject,
         status=ThreadStatus.WAITING,
         last_sent_at=now,
-        next_action_at=now + timedelta(days=settings.followup_delay_days),
+        next_action_at=now + timedelta(days=settings.followup_interval_days),
         followups_sent=0,
     )
     session.add(thread)
@@ -100,7 +103,7 @@ async def send_recontact(session: AsyncSession, thread: EmailThread) -> str:
     thread.status = ThreadStatus.WAITING
     thread.last_sent_at = now
     thread.followups_sent = 0
-    thread.next_action_at = now + timedelta(days=settings.followup_delay_days)
+    thread.next_action_at = now + timedelta(days=settings.followup_interval_days)
 
     session.add(
         EmailMessage(
@@ -125,7 +128,7 @@ async def send_followup(session: AsyncSession, thread: EmailThread) -> str:
 
     thread.last_sent_at = now
     thread.followups_sent = n
-    thread.next_action_at = now + timedelta(days=settings.followup_delay_days)
+    thread.next_action_at = now + timedelta(days=settings.followup_interval_days)
 
     session.add(
         EmailMessage(
@@ -139,7 +142,9 @@ async def send_followup(session: AsyncSession, thread: EmailThread) -> str:
     opp.stage = (
         OutreachStage.FOLLOW_UP_1 if n == 1 else OutreachStage.FOLLOW_UP_2
     )
-    if n >= settings.max_followups:
-        thread.next_action_at = None  # больше не дёргаем
+    # Пишем раз в неделю, пока не получим дату. Останавливаемся только при
+    # достижении предохранителя max_followups (0 = без лимита, пишем вечно).
+    if settings.followup_max_count and n >= settings.followup_max_count:
+        thread.next_action_at = None  # лимит достигнут — больше не дёргаем
         opp.stage = OutreachStage.STALLED
-    return f"🔁 Follow-up #{n}: «{opp.title}»"
+    return f"🔁 Напоминание #{n}: «{opp.title}»"

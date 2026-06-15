@@ -29,10 +29,12 @@ class Settings(BaseSettings):
     # DB
     database_url: str = "sqlite+aiosqlite:///./bot.db"
 
-    # Параметры рассылки/напоминаний
-    followup_delay_days: int = 3
-    max_followups: int = 2
-    reminder_offset_days: int = 7
+    # Напоминания контактам (агент): раз в неделю спрашивает про сроки, пока не
+    # получит точную дату или дату «напишите позже». followup_max_count —
+    # предохранитель: сколько максимум писем-напоминаний слать (0 = без лимита,
+    # писать вечно). По умолчанию 12 ≈ 3 месяца еженедельных писем.
+    followup_interval_days: int = 7
+    followup_max_count: int = 12
 
     # Часовой пояс пользователей: напоминания считаются и показываются в нём,
     # в БД всё хранится в UTC. reminder_hour — час по умолчанию, в который

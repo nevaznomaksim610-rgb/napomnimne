@@ -150,15 +150,18 @@ async def threads_needing_followup(
         OutreachStage.FOLLOW_UP_1,
         OutreachStage.FOLLOW_UP_2,
     }
+    conditions = [
+        EmailThread.next_action_at.is_not(None),
+        EmailThread.next_action_at <= now,
+        Opportunity.stage.in_(chasing),
+    ]
+    # followup_max_count <= 0 — без лимита (пишем еженедельно бесконечно).
+    if settings.followup_max_count and settings.followup_max_count > 0:
+        conditions.append(EmailThread.followups_sent < settings.followup_max_count)
     stmt = (
         select(EmailThread)
         .join(Opportunity, EmailThread.opportunity_id == Opportunity.id)
-        .where(
-            EmailThread.next_action_at.is_not(None),
-            EmailThread.next_action_at <= now,
-            EmailThread.followups_sent < settings.max_followups,
-            Opportunity.stage.in_(chasing),
-        )
+        .where(*conditions)
     )
     return list((await session.scalars(stmt)).all())
 
